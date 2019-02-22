@@ -1,29 +1,48 @@
-from sqlalchemy import create_engine, Table
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from taxonomy_backend import Archive, CountGenerator, FieldName, FilterSeq, MakeCluster, MarkLabel, MatchPrimer, MergeFiles, RenameCluster, SortCluster, TaxAssn, TaxData, UsearchGlobal
 
-engine = create_engine('mysql://root@127.0.0.1/taxonomy', echo=True)
-session = sessionmaker(bind=engine)()
-Base = declarative_base()
+match_primer_fcn = MatchPrimer()
+filter_fcn = FilterSeq()
+mark_label_fcn = MarkLabel()
+make_cluster_fcn = MakeCluster()
+usearch_global_fcn = UsearchGlobal()
+rename_cluster_fcn = RenameCluster()
+sort_cluster_fcn = SortCluster()
+merge_files_fcn = MergeFiles()
+tax_assn_fcn = TaxAssn("/home/qiime/genedb")
+count_gen_fcn = CountGenerator()
+archive_fcn = Archive()
 
-class Job(Base):
-    __table__ = Table('jobs', Base.metadata,
-                      autoload=True, autoload_with=engine)
-    def __init__(self, created_time, finished_time, task_name, primer_seq, match_option, tax_alg, rdp_db, conf_level, tr_len, file_paths, result_path, log_path, job_state):
-        self.created_time = created_time
-        self.finished_time = finished_time
-        self.task_name = task_name
-        self.primer_seq = primer_seq
-        self.match_option = match_option
-        self.tax_alg = tax_alg
-        self.rdp_db = rdp_db
-        self.conf_level = conf_level
-        self.tr_len = tr_len
-        self.file_paths = file_paths
-        self.result_path = result_path
-        self.log_path = log_path
-        self.job_state = job_state
+def assign_taxonomy(job):
+    filename = job.filename
+    taskname = job.taskname
+    primerseq = job.primerseq
+    matchfwd = job.matchfwd
+    matchrev = job.matchrev
+    matchfull = job.matchfull
+    taxassnalg = job.taxassnalg
+    rdpdb = job.rdpdb
+    conflevel = job.conflevel
+    trunclen = job.trunclen
+    tax_data = TaxData(filename,
+                   taskname,
+                   primerseq,
+                   matchfwd,
+                   matchrev,
+                   matchfull,
+                   taxassnalg,
+                   rdpdb,
+                   conflevel,
+                   trunclen,)
+    tax_data.apply(match_primer_fcn)
+    tax_data.apply(filter_fcn)
+    tax_data.apply(mark_label_fcn)
+    tax_data.apply(merge_files_fcn)
+    tax_data.apply(make_cluster_fcn)
+    tax_data.apply(usearch_global_fcn)
+    tax_data.apply(tax_assn_fcn)
+    tax_data.apply(count_gen_fcn)
+    tax_data.apply(archive_fcn)
 
-# session.add(Job(datetime.now(), datetime.now(), "name", "primer", "fwdrev", "alg", "db", 0.0, 1, "path1", "path2", "path3", "STOPPED"))
-data = session.query(Job).all()
+    tax_data.delete_temp_file()
+    return tax_data.environment[FieldName.ARCHIVEFILE]
+
