@@ -4,10 +4,10 @@ from sqlalchemy import create_engine, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-from .session_scope import session_scope
-from .taxonomy_assigner import assign_taxonomy
+from session_scope import session_scope
+from taxonomy_assigner import assign_taxonomy
 
-engine = create_engine('mysql://root@127.0.0.1/taxonomy', echo=True)
+engine = create_engine('mysql://root:1q2w3e4r@127.0.0.1/taxonomy', echo=True)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
@@ -36,23 +36,36 @@ class Job(Base):
 
 def is_job_availiable():
     with session_scope(Session) as sess:
-        return len(sess.query(Job).order_by(Job.created_time).all()) != 0
+        return sess.query(Job).filter_by(job_state='ENQUEUED').first()
+
+def change_job_state(job, state):
+    row_id = job.id
+    with session_scope(Session) as sess:
+        job = sess.query(Job).filter(Job.id==row_id).first()
+        if job:
+            job.job_state = state
 
 def get_and_lock_job():
-    with session_scope(Session) as sess:
-        job = sess.query(Job).filter_by(Job.job_state == 'ENQUEUED').first()
+    with session_scope(Session, expunge=True) as sess:
+        job = sess.query(Job).filter_by(job_state='ENQUEUED').order_by(Job.created_time).first()
         if job:
-            job.job_state = 'PROCESSING'
+            change_job_state(job, 'PROCESSING')
             return job
     return None
 
 def process_jobs():
     while is_job_availiable():
         job = get_and_lock_job()
+        print("locked job: ", job)
         if job:
-            assign_taxonomy(job)
+            archive_file = assign_taxonomy(job)
+            print("archive_file: ", archive_file)
+            job.result_path = archive_file
+            change_job_state(job, 'FINISHED')
 
-while True:
-    if is_job_availiable():
-        process_jobs()
-    time.sleep(1)
+if __name__ == "__main__":
+    while True:
+        print("is_job_availiable(): ", is_job_availiable())
+        if is_job_availiable():
+            process_jobs()
+        time.sleep(1)
